@@ -1,0 +1,13 @@
+playwright
+pytest
+pytest-playwright
+allure-pytest
+python-dotenv
+PyYAML
+ddddocr
+Pillow
+pytest-xdist
+pytest-repeat
+allure-combine
+pytest-rerunfailures
+allure-python-commons

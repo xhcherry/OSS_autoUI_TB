@@ -1,0 +1,14 @@
+{
+    "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+    "python.terminal.activateEnvironment": true,
+    "terminal.integrated.profiles.windows": {
+        "AutoUI Dev": {
+            "path": "cmd.exe",
+            "args": [
+                "/k",
+                "${workspaceFolder}\\.venv\\Scripts\\activate"
+            ]
+        }
+    },
+    "terminal.integrated.defaultProfile.windows": "AutoUI Dev"
+}

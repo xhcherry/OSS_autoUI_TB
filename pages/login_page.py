@@ -26,9 +26,7 @@ class LoginPage(BasePage):
         # 并发时网络/系统响应会变慢，必须死等页面实质上离开 login 状态，才能将 page 交给测试用例
         self.page.wait_for_function("window.location.hash !== '#/login'", timeout=15000)
 
-        # 关闭首页可能会弹出的公告/广告对话框（最多等 3 秒）
-        # 不能用 add_locator_handler 全局监听
-        try:
-            self.page.get_by_role("button", name="关闭此对话框").first.click(timeout=3000)
-        except Exception:
-            pass
+        # 关闭首页可能会弹出的公告/广告对话框
+        dialog = self.page.get_by_role("button", name="关闭此对话框")
+        if dialog.count() > 0:
+            dialog.first.click(timeout=3000)

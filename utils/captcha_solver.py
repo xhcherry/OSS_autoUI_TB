@@ -1,9 +1,10 @@
 import re
+from collections import Counter
 from io import BytesIO
 from typing import TypedDict
 
 import ddddocr
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageFilter
 from playwright.sync_api import Page, Error as PlaywrightError, Position
 
 type BoundingBox = tuple[int, int, int, int]
@@ -19,11 +20,16 @@ class DetectionResult(TypedDict):
 _det = ddddocr.DdddOcr(det=True, ocr=False, show_ad=False)
 _ocr = ddddocr.DdddOcr(show_ad=False)
 
+# Beta 模型使用不同权重，识别某些字体更准确；初始化失败则降级
+try:
+    _ocr_beta = ddddocr.DdddOcr(beta=True, show_ad=False)
+except (RuntimeError, OSError, ValueError):
+    _ocr_beta = None
+
 
 def _parse_click_order(instruction_text: str) -> list[str]:
     """从提示文字中解析需要点击的字符顺序"""
-    
-    # 🌟 Python 3.8+ 新特性：海象运算符 (:=)，边赋值边判断，省去冗余代码
+
     if not (match := re.search(r'【(.+?)】', instruction_text)):
         raise ValueError(f"无法解析点击顺序: {instruction_text}")
         
@@ -32,26 +38,148 @@ def _parse_click_order(instruction_text: str) -> list[str]:
     return [c.strip() for c in chars if c.strip()]
 
 
+# ── 图像预处理 ───────────────────────────────────────────────
+
+
+def _preprocess_for_detection(image_bytes: bytes) -> bytes:
+    """预处理图片以提升字符检测的准确度
+    
+    增强对比度和锐度，让字符与背景区分更明显、边缘更清晰
+    """
+    img = Image.open(BytesIO(image_bytes))
+    img = ImageEnhance.Contrast(img).enhance(1.5)
+    img = ImageEnhance.Sharpness(img).enhance(2.0)
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _build_crop_variants(crop: Image.Image) -> list[bytes]:
+    """对单个字符裁剪图生成多种预处理变体，用于多引擎投票
+
+    不同预处理策略适合不同字体/背景，生成多个候选以提高识别鲁棒性
+    """
+    min_size = 64
+
+    # 太小的图片 OCR 识别率很低，先放大到最小尺寸
+    w, h = crop.size
+    if w < min_size or h < min_size:
+        scale = max(min_size / w, min_size / h)
+        crop = crop.resize((int(w * scale), int(h * scale)), Image.Resampling.LANCZOS)
+
+    def _to_bytes(im: Image.Image) -> bytes:
+        b = BytesIO()
+        im.save(b, format="PNG")
+        return b.getvalue()
+
+    variants = [
+        # 变体1: 直接使用（可能已放大）
+        _to_bytes(crop),
+        # 变体2: 灰度化 + 高对比度 —— 消除颜色干扰
+        _to_bytes(ImageEnhance.Contrast(crop.convert("L").convert("RGB")).enhance(2.0)),
+        # 变体3: 锐化 + 对比度 —— 强化笔画细节
+        _to_bytes(ImageEnhance.Contrast(ImageEnhance.Sharpness(crop).enhance(3.0)).enhance(1.8)),
+        # 变体4: 中值滤波去噪 + 对比度 —— 消除椒盐噪声
+        _to_bytes(ImageEnhance.Contrast(crop.filter(ImageFilter.MedianFilter(3))).enhance(1.5)),
+    ]
+    return variants
+
+
+# ── OCR 识别 ─────────────────────────────────────────────────
+
+
+def _vote_ocr(variants: list[bytes]) -> str:
+    """对多个变体分别用多个 OCR 引擎识别，投票选出最可能的字符
+    
+    多数投票机制可有效过滤单次识别的随机错误
+    """
+    engines = [_ocr] + ([_ocr_beta] if _ocr_beta else [])
+    votes: list[str] = []
+
+    for img_bytes in variants:
+        for engine in engines:
+            try:
+                res = engine.classification(img_bytes)
+                char = res.strip() if isinstance(res, str) else str(res)
+                if char:
+                    votes.append(char)
+            except (RuntimeError, OSError, ValueError):
+                continue
+
+    if not votes:
+        return ""
+
+    most_common: str = Counter(votes).most_common(1)[0][0]
+    return most_common
+
+
+# ── 检测框合并 ────────────────────────────────────────────────
+
+
+def _iou(box_a: list[int | float], box_b: list[int | float]) -> float:
+    """计算两个检测框的 IoU (Intersection over Union)"""
+    x1 = max(box_a[0], box_b[0])
+    y1 = max(box_a[1], box_b[1])
+    x2 = min(box_a[2], box_b[2])
+    y2 = min(box_a[3], box_b[3])
+
+    inter = max(0, x2 - x1) * max(0, y2 - y1)
+    if inter == 0:
+        return 0.0
+
+    area_a = (box_a[2] - box_a[0]) * (box_a[3] - box_a[1])
+    area_b = (box_b[2] - box_b[0]) * (box_b[3] - box_b[1])
+    return inter / (area_a + area_b - inter)
+
+
+def _merge_bboxes(bboxes_a: list, bboxes_b: list, iou_threshold: float = 0.5) -> list:
+    """合并两组检测框，用 IoU 去重
+    
+    原图和预处理图分别检测后合并，提高字符召回率
+    """
+    merged = list(bboxes_a)
+    for box_b in bboxes_b:
+        if not any(_iou(box_a, box_b) > iou_threshold for box_a in merged):
+            merged.append(box_b)
+    return merged
+
+
+# ── 核心检测+识别 ─────────────────────────────────────────────
+
+
 def _detect_and_recognize(image_bytes: bytes) -> list[DetectionResult]:
-    """检测图片中所有字符的位置"""
-    bboxes = _det.detection(image_bytes)
+    """检测图片中所有字符的位置并识别
+    
+    1. 原图 + 预处理图双重检测，合并检测框提高召回
+    2. 增大裁剪 padding 确保字符完整
+    3. 多变体 × 多引擎投票确定字符
+    """
+    processed = _preprocess_for_detection(image_bytes)
+
+    # 双重检测 + IoU 去重合并
+    bboxes_raw = _det.detection(image_bytes)
+    bboxes_processed = _det.detection(processed)
+    all_bboxes = _merge_bboxes(bboxes_raw, bboxes_processed)
+
+    # 使用原图裁剪（预处理图可能丢失颜色信息）
     img = Image.open(BytesIO(image_bytes))
 
     results: list[DetectionResult] = []
-    for box in bboxes:
+    pad = 8  # 比原来的 4 更大，确保字符笔画不被截断
+
+    for box in all_bboxes:
         x1, y1, x2, y2 = box
-        pad = 4
         crop = img.crop((
             max(0, x1 - pad), max(0, y1 - pad),
             min(img.width, x2 + pad), min(img.height, y2 + pad)
         ))
-        buf = BytesIO()
-        crop.save(buf, format="PNG")
-        
-        res = _ocr.classification(buf.getvalue())
-        char = res.strip() if isinstance(res, str) else str(res)
 
-        # 构建标准的返回值
+        variants = _build_crop_variants(crop)
+        char = _vote_ocr(variants)
+
+        if not char:
+            continue
+
         results.append({
             "char": char,
             "box": (x1, y1, x2, y2),
@@ -59,6 +187,37 @@ def _detect_and_recognize(image_bytes: bytes) -> list[DetectionResult]:
         })
 
     return results
+
+
+# ── 字符匹配 ─────────────────────────────────────────────────
+
+
+def _find_best_match(
+    target: str,
+    detected: list[DetectionResult],
+    used_indices: set[int],
+) -> int | None:
+    """为目标字符找到最佳匹配的检测结果索引
+
+    匹配优先级（避免模糊匹配导致错配）：
+      1. 完全匹配
+      2. 目标包含在识别结果中（如目标"大"，识别为"大学"）
+      3. 识别结果包含在目标中
+
+    已使用的索引会被跳过，防止同一检测框被多次匹配
+    """
+    for priority_fn in [
+        lambda t, c: c == t,            # 完全匹配
+        lambda t, c: t in c,            # 目标在结果中
+        lambda t, c: c in t and c,      # 结果在目标中
+    ]:
+        for i, d in enumerate(detected):
+            if i not in used_indices and priority_fn(target, d["char"]):
+                return i
+    return None
+
+
+# ── 主流程 ────────────────────────────────────────────────────
 
 
 def solve_click_captcha(page: Page, max_retries: int = 3) -> bool:
@@ -93,14 +252,14 @@ def solve_click_captcha(page: Page, max_retries: int = 3) -> bool:
             print(f"[验证码] 检测到: {[(d['char'], d['center']) for d in detected]}")
 
             click_success = True
+            used_indices: set[int] = set()
+
             for target in target_chars:
-                matched = None
-                for d in detected:
-                    if target in d["char"] or d["char"] in target:
-                        matched = d
-                        break
-                        
-                if matched:
+                matched_idx = _find_best_match(target, detected, used_indices)
+
+                if matched_idx is not None:
+                    used_indices.add(matched_idx)
+                    matched = detected[matched_idx]
                     cx, cy = matched["center"]
                     target_x = cx * scale_x
                     target_y = cy * scale_y
@@ -115,6 +274,8 @@ def solve_click_captcha(page: Page, max_retries: int = 3) -> bool:
                     break
 
             if not click_success:
+                # 未识别到所有答案，手动点击刷新按钮
+                print("[验证码] 未识别到所有答案，手动刷新验证码")
                 _try_refresh(page)
                 continue
 
@@ -125,7 +286,9 @@ def solve_click_captcha(page: Page, max_retries: int = 3) -> bool:
                 return True
             except PlaywrightError as e:
                 print(f"[验证码] 第 {attempt + 1} 次验证未通过: {e}")
-                _try_refresh(page)
+                # 已点击完所有答案但验证失败，等待1秒自动刷新，不手动点击刷新按钮
+                print("[验证码] 等待1秒后自动刷新验证码")
+                page.wait_for_timeout(1000)
 
         except (PlaywrightError, ValueError, RuntimeError) as e:
             print(f"[验证码] 第 {attempt + 1} 次运行出错: {e}")

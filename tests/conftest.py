@@ -1,66 +1,69 @@
-import os
-from datetime import datetime
-import allure
 import pytest
 from playwright.sync_api import Page, Browser
 from pages.login_page import LoginPage
 from config.settings import Config
 from utils.db_client import DBClient
+from utils.allure_helper import generate_allure_report_dir, attach_screenshot
+
+# ── 模块 marker → 账号池映射 ──────────────────────────────────────
+MODULE_ACCOUNTS = {
+    "sales":    Config.SALES_ACCOUNTS,
+    "academic": Config.ACADEMIC_ACCOUNTS,
+    "resource": Config.RESOURCE_ACCOUNTS,
+}
+
+
+def _resolve_account(request, worker_id):
+    """
+    根据 pytest marker 返回对应板块的账号池，再按 worker_id 轮询分配。
+    - 有 marker → 使用该模块的账号池
+    - 无 marker → 使用默认账号
+    - 多 worker 并发时自动轮询（gw0→pool[0], gw1→pool[1], ...）
+    """
+    pool = None
+    for marker_name, account_pool in MODULE_ACCOUNTS.items():
+        if request.node.get_closest_marker(marker_name):
+            pool = account_pool
+            break
+    if pool is None:
+        pool = [{"username": Config.USERNAME, "password": Config.PASSWORD}]
+
+    # worker_id 轮询：master → pool[0]；gw0,gw1,... → 取模
+    if worker_id == "master":
+        return pool[0]
+    worker_index = int(worker_id[2:])
+    return pool[worker_index % len(pool)]
 
 
 def pytest_configure(config):
-    # 如果已经通过命令行设置了 allure_report_dir (例如在 runner.py 中设置了)，或者当前是 worker 进程，就不执行动态生成
+    # 如果 runner.py 已设置 --alluredir，或者当前是 worker 进程，跳过
     if getattr(config.option, "allure_report_dir", None) or hasattr(config, "workerinput"):
         return
-
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    results_dir = os.path.join(os.path.dirname(__file__), '..', 'report', f'allure-results-{timestamp}')
-    os.makedirs(results_dir, exist_ok=True)
-    # 动态设置 alluredir，每次运行独立目录，历史报告全部保留
-    config.option.allure_report_dir = results_dir
-
-
-@pytest.fixture(scope="session")
-def account_config(worker_id):
-    """
-    根据 worker_id (gw0, gw1...) 从账号池中分配账号。
-    如果是单线程运行，worker_id 为 'master'。
-    """
-    if not Config.ACCOUNTS:
-        raise ValueError("未在 .env 或 settings 中配置 OSS 账号")
-
-    if worker_id == "master":
-        return Config.ACCOUNTS[0]
-
-    # worker_id 格式为 gw0, gw1, gw2...
-    worker_index = int(worker_id[2:])
-    # 使用取模运算分配账号，支持 线程数 > 账号数 或 线程数 < 账号数
-    return Config.ACCOUNTS[worker_index % len(Config.ACCOUNTS)]
+    # 直接运行 pytest 命令时的 fallback：动态生成报告目录
+    config.option.allure_report_dir = generate_allure_report_dir()
 
 
 @pytest.fixture(scope="function")
-def logged_in_page(page: Page, account_config):
+def logged_in_page(page: Page, request, worker_id):
+    page.set_default_timeout(10000)  # 10 秒
+    account = _resolve_account(request, worker_id)
     login_page = LoginPage(page)
     page.goto(Config.BASE_URL)
-    login_page.login(account_config["username"], account_config["password"])
+    login_page.login(account["username"], account["password"])
     yield page
-    # 测试结束后截图附加到报告
-    allure.attach(
-        page.screenshot(full_page=True),
-        name="最终截图",
-        attachment_type=allure.attachment_type.PNG,
-    )
+    attach_screenshot(page, "最终截图")
 
 
-# 新增一个module fixture
 @pytest.fixture(scope="module")
-def shared_page(browser: Browser, account_config):
+def shared_page(browser: Browser, request, worker_id):
+    account = _resolve_account(request, worker_id)
     context = browser.new_context()
     page = context.new_page()
+    page.set_default_timeout(10000)  # 10 秒
 
     login_page = LoginPage(page)
     page.goto(Config.BASE_URL)
-    login_page.login(account_config["username"], account_config["password"])
+    login_page.login(account["username"], account["password"])
 
     yield page
 
@@ -74,26 +77,16 @@ def pytest_runtest_makereport(item, call):
     report = outcome.get_result()
 
     if report.when == "call" and report.failed:
-        # 尝试从 fixture 中获取 page 对象
-        page: Page = None
         for fixture_name in ("logged_in_page", "shared_page", "page"):
             page = item.funcargs.get(fixture_name)
             if page is not None:
+                attach_screenshot(page, "失败截图")
                 break
-
-        if page is not None:
-            allure.attach(
-                page.screenshot(full_page=True),
-                name="失败截图",
-                attachment_type=allure.attachment_type.PNG,
-            )
 
 
 @pytest.fixture(scope="session")
 def db():
-    """
-    Session级别的数据库夹具，整个测试过程只实例化一次连接
-    """
+    """Session级别的数据库夹具，整个测试过程只实例化一次连接"""
     db_client = DBClient()
     yield db_client
     db_client.close()

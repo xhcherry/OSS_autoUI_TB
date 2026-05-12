@@ -37,14 +37,9 @@ def _parse_click_order(instruction_text: str) -> list[str]:
     chars = re.split(r'[、，,]', content)
     return [c.strip() for c in chars if c.strip()]
 
-
-# ── 图像预处理 ───────────────────────────────────────────────
-
-
 def _preprocess_for_detection(image_bytes: bytes) -> bytes:
-    """预处理图片以提升字符检测的准确度
-    
-    增强对比度和锐度，让字符与背景区分更明显、边缘更清晰
+    """
+    预处理图片以提升字符检测的准确度
     """
     img = Image.open(BytesIO(image_bytes))
     img = ImageEnhance.Contrast(img).enhance(1.5)
@@ -55,13 +50,11 @@ def _preprocess_for_detection(image_bytes: bytes) -> bytes:
 
 
 def _build_crop_variants(crop: Image.Image) -> list[bytes]:
-    """对单个字符裁剪图生成多种预处理变体，用于多引擎投票
-
-    不同预处理策略适合不同字体/背景，生成多个候选以提高识别鲁棒性
+    """
+    对单个字符裁剪图生成多种预处理变体
     """
     min_size = 64
 
-    # 太小的图片 OCR 识别率很低，先放大到最小尺寸
     w, h = crop.size
     if w < min_size or h < min_size:
         scale = max(min_size / w, min_size / h)
@@ -73,25 +66,16 @@ def _build_crop_variants(crop: Image.Image) -> list[bytes]:
         return b.getvalue()
 
     variants = [
-        # 变体1: 直接使用（可能已放大）
         _to_bytes(crop),
-        # 变体2: 灰度化 + 高对比度 —— 消除颜色干扰
         _to_bytes(ImageEnhance.Contrast(crop.convert("L").convert("RGB")).enhance(2.0)),
-        # 变体3: 锐化 + 对比度 —— 强化笔画细节
         _to_bytes(ImageEnhance.Contrast(ImageEnhance.Sharpness(crop).enhance(3.0)).enhance(1.8)),
-        # 变体4: 中值滤波去噪 + 对比度 —— 消除椒盐噪声
         _to_bytes(ImageEnhance.Contrast(crop.filter(ImageFilter.MedianFilter(3))).enhance(1.5)),
     ]
     return variants
 
-
-# ── OCR 识别 ─────────────────────────────────────────────────
-
-
 def _vote_ocr(variants: list[bytes]) -> str:
-    """对多个变体分别用多个 OCR 引擎识别，投票选出最可能的字符
-    
-    多数投票机制可有效过滤单次识别的随机错误
+    """
+    对多个变体分别用多个 OCR 引擎识别，投票选出最可能的字符
     """
     engines = [_ocr] + ([_ocr_beta] if _ocr_beta else [])
     votes: list[str] = []
@@ -112,10 +96,6 @@ def _vote_ocr(variants: list[bytes]) -> str:
     most_common: str = Counter(votes).most_common(1)[0][0]
     return most_common
 
-
-# ── 检测框合并 ────────────────────────────────────────────────
-
-
 def _iou(box_a: list[int | float], box_b: list[int | float]) -> float:
     """计算两个检测框的 IoU (Intersection over Union)"""
     x1 = max(box_a[0], box_b[0])
@@ -133,9 +113,8 @@ def _iou(box_a: list[int | float], box_b: list[int | float]) -> float:
 
 
 def _merge_bboxes(bboxes_a: list, bboxes_b: list, iou_threshold: float = 0.5) -> list:
-    """合并两组检测框，用 IoU 去重
-    
-    原图和预处理图分别检测后合并，提高字符召回率
+    """
+    合并两组检测框，用 IoU 去重
     """
     merged = list(bboxes_a)
     for box_b in bboxes_b:
@@ -143,16 +122,9 @@ def _merge_bboxes(bboxes_a: list, bboxes_b: list, iou_threshold: float = 0.5) ->
             merged.append(box_b)
     return merged
 
-
-# ── 核心检测+识别 ─────────────────────────────────────────────
-
-
 def _detect_and_recognize(image_bytes: bytes) -> list[DetectionResult]:
-    """检测图片中所有字符的位置并识别
-    
-    1. 原图 + 预处理图双重检测，合并检测框提高召回
-    2. 增大裁剪 padding 确保字符完整
-    3. 多变体 × 多引擎投票确定字符
+    """
+    检测图片中所有字符的位置并识别
     """
     processed = _preprocess_for_detection(image_bytes)
 
@@ -161,11 +133,10 @@ def _detect_and_recognize(image_bytes: bytes) -> list[DetectionResult]:
     bboxes_processed = _det.detection(processed)
     all_bboxes = _merge_bboxes(bboxes_raw, bboxes_processed)
 
-    # 使用原图裁剪（预处理图可能丢失颜色信息）
     img = Image.open(BytesIO(image_bytes))
 
     results: list[DetectionResult] = []
-    pad = 8  # 比原来的 4 更大，确保字符笔画不被截断
+    pad = 8
 
     for box in all_bboxes:
         x1, y1, x2, y2 = box
@@ -188,23 +159,13 @@ def _detect_and_recognize(image_bytes: bytes) -> list[DetectionResult]:
 
     return results
 
-
-# ── 字符匹配 ─────────────────────────────────────────────────
-
-
 def _find_best_match(
     target: str,
     detected: list[DetectionResult],
     used_indices: set[int],
 ) -> int | None:
-    """为目标字符找到最佳匹配的检测结果索引
-
-    匹配优先级（避免模糊匹配导致错配）：
-      1. 完全匹配
-      2. 目标包含在识别结果中（如目标"大"，识别为"大学"）
-      3. 识别结果包含在目标中
-
-    已使用的索引会被跳过，防止同一检测框被多次匹配
+    """
+    为目标字符找到最佳匹配的检测结果索引
     """
     for priority_fn in [
         lambda t, c: c == t,            # 完全匹配
@@ -215,10 +176,6 @@ def _find_best_match(
             if i not in used_indices and priority_fn(target, d["char"]):
                 return i
     return None
-
-
-# ── 主流程 ────────────────────────────────────────────────────
-
 
 def solve_click_captcha(page: Page, max_retries: int = 3) -> bool:
     """自动识别并解决点选验证码（canvas 类型）"""

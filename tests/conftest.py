@@ -5,12 +5,21 @@ from config.settings import Config
 from utils.db_client import DBClient
 from utils.allure_helper import generate_allure_report_dir, attach_screenshot
 
-# ── 模块 marker → 账号池映射 ──────────────────────────────────────
-MODULE_ACCOUNTS = {
-    "sales":    Config.SALES_ACCOUNTS,
-    "academic": Config.ACADEMIC_ACCOUNTS,
-    "resource": Config.RESOURCE_ACCOUNTS,
-}
+# ── 模块 marker → 账号池映射（基于约定，自动从 Config 属性发现）──
+def _build_account_registry():
+    """
+    约定：Config 中形如 XXX_ACCOUNTS 的属性自动注册为模块账号池。
+    例如 Config.SALES_ACCOUNTS → marker "sales"
+    """
+    registry = {}
+    for attr in dir(Config):
+        if attr.endswith("_ACCOUNTS") and not attr.startswith("_"):
+            marker_name = attr.removesuffix("_ACCOUNTS").lower()
+            registry[marker_name] = getattr(Config, attr)
+    return registry
+
+
+MODULE_ACCOUNTS = _build_account_registry()
 
 
 def _resolve_account(request, worker_id):
@@ -36,6 +45,10 @@ def _resolve_account(request, worker_id):
 
 
 def pytest_configure(config):
+    # 自动注册模块 marker（基于 Config 账号池属性，无需手动维护 pytest.ini）
+    for marker_name in MODULE_ACCOUNTS:
+        config.addinivalue_line("markers", f"{marker_name}: {marker_name}板块用例")
+
     # 如果 runner.py 已设置 --alluredir，或者当前是 worker 进程，跳过
     if getattr(config.option, "allure_report_dir", None) or hasattr(config, "workerinput"):
         return

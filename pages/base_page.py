@@ -5,8 +5,14 @@ from pages.components.header import Header
 class BasePage:
     def __init__(self, page: Page):
         self.page = page
-        # 实例化 Header，并赋值给 self.header
-        self.header = Header(page)
+        self._header = None
+
+    @property
+    def header(self):
+        """懒加载 Header，弹窗等不需要导航的页面可以避免无效初始化"""
+        if self._header is None:
+            self._header = Header(self.page)
+        return self._header
 
     def navigate(self, url: str = None):
         if url:

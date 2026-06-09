@@ -1,0 +1,31 @@
+stages:
+  - test
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+cache:
+  paths:
+    - .cache/pip
+    - .venv/
+
+test_ui:
+  stage: test
+  image: python:3.13
+  before_script:
+    - python -V
+    - apt-get update && apt-get install -y libgl1
+    - pip install --upgrade pip
+    - pip install -e .
+    - playwright install --with-deps chromium
+  script:
+    - python runner.py
+  artifacts:
+    when: always
+    paths:
+      - report/
+    expire_in: 1 week
+  only:
+    - main
+    - master
+    - merge_requests

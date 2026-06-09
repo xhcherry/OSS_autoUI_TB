@@ -16,11 +16,9 @@ class DetectionResult(TypedDict):
     center: CenterPoint
 
 
-# 全局初始化 OCR 实例（避免重复初始化，提升性能）
 _det = ddddocr.DdddOcr(det=True, ocr=False, show_ad=False)
 _ocr = ddddocr.DdddOcr(show_ad=False)
 
-# Beta 模型使用不同权重，识别某些字体更准确；初始化失败则降级
 try:
     _ocr_beta = ddddocr.DdddOcr(beta=True, show_ad=False)
 except (RuntimeError, OSError, ValueError):
@@ -28,7 +26,6 @@ except (RuntimeError, OSError, ValueError):
 
 
 def _parse_click_order(instruction_text: str) -> list[str]:
-    """从提示文字中解析需要点击的字符顺序"""
 
     if not (match := re.search(r'【(.+?)】', instruction_text)):
         raise ValueError(f"无法解析点击顺序: {instruction_text}")
@@ -38,9 +35,6 @@ def _parse_click_order(instruction_text: str) -> list[str]:
     return [c.strip() for c in chars if c.strip()]
 
 def _preprocess_for_detection(image_bytes: bytes) -> bytes:
-    """
-    预处理图片以提升字符检测的准确度
-    """
     img = Image.open(BytesIO(image_bytes))
     img = ImageEnhance.Contrast(img).enhance(1.5)
     img = ImageEnhance.Sharpness(img).enhance(2.0)
@@ -50,9 +44,6 @@ def _preprocess_for_detection(image_bytes: bytes) -> bytes:
 
 
 def _build_crop_variants(crop: Image.Image) -> list[bytes]:
-    """
-    对单个字符裁剪图生成多种预处理变体
-    """
     min_size = 64
 
     w, h = crop.size
@@ -74,9 +65,6 @@ def _build_crop_variants(crop: Image.Image) -> list[bytes]:
     return variants
 
 def _vote_ocr(variants: list[bytes]) -> str:
-    """
-    对多个变体分别用多个 OCR 引擎识别，投票选出最可能的字符
-    """
     engines = [_ocr] + ([_ocr_beta] if _ocr_beta else [])
     votes: list[str] = []
 
@@ -97,7 +85,6 @@ def _vote_ocr(variants: list[bytes]) -> str:
     return most_common
 
 def _iou(box_a: list[int | float], box_b: list[int | float]) -> float:
-    """计算两个检测框的 IoU (Intersection over Union)"""
     x1 = max(box_a[0], box_b[0])
     y1 = max(box_a[1], box_b[1])
     x2 = min(box_a[2], box_b[2])
@@ -113,9 +100,6 @@ def _iou(box_a: list[int | float], box_b: list[int | float]) -> float:
 
 
 def _merge_bboxes(bboxes_a: list, bboxes_b: list, iou_threshold: float = 0.5) -> list:
-    """
-    合并两组检测框，用 IoU 去重
-    """
     merged = list(bboxes_a)
     for box_b in bboxes_b:
         if not any(_iou(box_a, box_b) > iou_threshold for box_a in merged):
@@ -123,9 +107,6 @@ def _merge_bboxes(bboxes_a: list, bboxes_b: list, iou_threshold: float = 0.5) ->
     return merged
 
 def _detect_and_recognize(image_bytes: bytes) -> list[DetectionResult]:
-    """
-    检测图片中所有字符的位置并识别
-    """
     processed = _preprocess_for_detection(image_bytes)
 
     # 双重检测 + IoU 去重合并
@@ -199,7 +180,7 @@ def solve_click_captcha(page: Page, max_retries: int = 3) -> bool:
             img_for_size = Image.open(BytesIO(screenshot_bytes))
             pixel_width, pixel_height = img_for_size.size
 
-            if not (canvas_box := canvas.bounding_box()): # 🌟 再次使用海象运算符精简检查逻辑
+            if not (canvas_box := canvas.bounding_box()):
                 continue
                 
             scale_x = canvas_box["width"] / pixel_width
@@ -243,7 +224,6 @@ def solve_click_captcha(page: Page, max_retries: int = 3) -> bool:
                 return True
             except PlaywrightError as e:
                 print(f"[验证码] 第 {attempt + 1} 次验证未通过: {e}")
-                # 已点击完所有答案但验证失败，等待1秒自动刷新，不手动点击刷新按钮
                 print("[验证码] 等待1秒后自动刷新验证码")
                 page.wait_for_timeout(1000)
 

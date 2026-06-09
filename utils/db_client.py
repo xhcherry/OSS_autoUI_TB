@@ -28,7 +28,7 @@ class DBClient:
             logger.error(f"数据库连接失败: {e}")
             raise e
 
-    def execute_query(self, sql: str, params: tuple = None) -> list:
+    def execute_query(self, sql: str, params: tuple | None = None) -> list:
         if not self.conn or not self.conn.open:
             self.connect()
         try:
@@ -40,7 +40,7 @@ class DBClient:
             logger.error(f"执行查询失败 SQL: {sql}, Params: {params}, Error: {e}")
             return []
 
-    def execute_update(self, sql: str, params: tuple = None) -> int:
+    def execute_update(self, sql: str, params: tuple | None = None) -> int:
         if not self.conn or not self.conn.open:
             self.connect()
         try:
@@ -51,6 +51,13 @@ class DBClient:
             self.conn.rollback()
             logger.error(f"执行更新失败 SQL: {sql}, Params: {params}, Error: {e}")
             raise e
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
 
     def close(self):
         if self.conn and self.conn.open:

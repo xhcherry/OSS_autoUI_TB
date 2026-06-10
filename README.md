@@ -51,7 +51,7 @@ Allure 用于生成可视化测试报告。
 2. 输入以下命令（邮箱替换为你的 GitLab 邮箱）：
 
    ```bash
-   ssh-keygen -t rsa -C "your_email@lingshi.com"
+   ssh-keygen -t rsa -C "your_email@x.com"
    ```
 
 3. 一路回车到底，不要设置密码。这会在你的用户目录下的 `.ssh` 文件夹里生成两个文件：`id_rsa`（私钥）和 `id_rsa.pub`（公钥）。

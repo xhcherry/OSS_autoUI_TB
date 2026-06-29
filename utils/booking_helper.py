@@ -2,9 +2,9 @@
 约课相关辅助工具
 - pick_random_available_time_slots: 在约课时间表中随机点击 N 个「可约」（绿色）时间格
 """
+
 import random
 import time
-
 
 # 在页面 DOM 中查找所有"可约"（绿色背景）时间格，并打上临时标记 data-auto-pick-slot
 # 完全不依赖时间文本格式（hh:mm~hh:mm / hh:mm～hh:mm 都可），仅靠样式颜色识别。
@@ -84,9 +84,7 @@ def pick_random_available_time_slots(
         if total >= count:
             break
         if time.monotonic() >= deadline:
-            raise RuntimeError(
-                f"可约时间不足 {count} 个，当前仅 {total} 个（已等待 {timeout}s）"
-            )
+            raise RuntimeError(f"可约时间不足 {count} 个，当前仅 {total} 个（已等待 {timeout}s）")
         page.wait_for_timeout(int(poll_interval * 1000))
 
     chosen = random.sample(range(total), count)

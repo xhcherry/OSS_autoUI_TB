@@ -1,206 +1,129 @@
-# OSS_autoUI
+# autoUI 架构
 
-本指南旨在帮助测试人员快速搭建环境并上手 **OSS_autoUI** 自动化框架。该框架基于 **Python + Playwright + Pytest + Allure** 构建。
+基于 **Python + Playwright + Pytest + Allure** 的 Web UI 自动化测试**框架架构**。
+本仓库已剥离所有业务代码，仅保留可复用的框架骨架，供具体业务项目在此之上落地用例。
 
-- Pytest 文档：<https://docs.pytest.org/en/latest/getting-started.html>
-- Playwright 文档：<https://playwright.dev/python/docs/intro>
+> 业务实现请基于本架构扩展 `pages/<模块>/` 与 `tests/<模块>/`，不要修改架构核心
+> （`config/`、`utils/`、`pages/base_page.py`、`pages/header.py`、`tests/conftest.py`、`runner.py`）。
 
-## 一、软件环境安装
+---
 
-### 1. 安装 Python（版本 3.13+）
+## 一、架构组成
 
-1. **下载**：访问 [Python 官网](https://www.python.org/downloads/windows/)，下载最新的 Python 3.13+ 安装包。
-
-2. **安装**：
-   - 双击运行安装包。
-   - 勾选底部的 **"Add Python.exe to PATH"**（也可以不勾，项目会单独配置 `.venv` 虚拟环境）。
-   - 选择 "Install Now"。
-
-3. **验证**：打开命令行（CMD）输入 `python --version`，显示 `Python 3.13.x` 即为成功。
-
-### 2. 安装 IDE
-
-- **PyCharm（推荐，配合 Qoder 插件或 CodeBuddy）**：
-  - 下载 [PyCharm](https://www.jetbrains.com/pycharm/download/) 任意版本。
-  - 默认安装即可。
-  - PyCharm 在跑单用例及单文件时更快捷方便。
-
-### 3. 安装 Allure 测试报告
-
-Allure 用于生成可视化测试报告。
-
-1. **下载**：前往 [Allure GitHub Releases](https://github.com/allure-framework/allure2/releases) 下载最新版 `.zip` 包（例如 `allure-x.x.x.zip`）。
-
-2. **解压**：将 zip 包解压到你电脑的一个固定位置（如 `D:\software\allure`）。
-
-3. **配置环境变量**：
-   - 右键"此电脑" → "属性" → "高级系统设置" → "环境变量"。
-   - 在"系统变量"中找到 `Path`，点击编辑。
-   - 点击"新建"，将 Allure 的 `bin` 目录路径添加进去（例如 `D:\software\allure\bin`）。
-
-4. **验证**：重启终端，输入 `allure --version`，显示版本号即可。
-
-### 4. 安装 Git
-
-前往 [Git 官网](https://git-scm.com/install/windows) 下载最新版，安装全部默认即可。
-
-**第 1 步：在本地电脑生成 SSH 密钥**
-
-1. 打开电脑上的终端。
-
-2. 输入以下命令（邮箱替换为你的 GitLab 邮箱）：
-
-   ```bash
-   ssh-keygen -t rsa -C "your_email@x.com"
-   ```
-
-3. 一路回车到底，不要设置密码。这会在你的用户目录下的 `.ssh` 文件夹里生成两个文件：`id_rsa`（私钥）和 `id_rsa.pub`（公钥）。
-
-**第 2 步：把公钥配置到 GitLab**
-
-1. 用记事本打开刚才生成的 `id_rsa.pub` 文件，复制里面所有的内容（一长串以 `ssh-rsa` 开头的字符）。
-
-2. 登录 GitLab 网页版。
-
-3. 点击右上角头像 → **Settings（设置）** → 左侧菜单找 **SSH Keys**。
-
-4. 将复制的内容粘贴到 "Key" 文本框中，点击 "Add key" 保存。
-
-**第 3 步：在 PyCharm 中拉取代码**
-
-1. 回到 PyCharm，在左侧上方点击"克隆仓库"，粘贴仓库地址 `git`，直接 Clone。
-
-2. 克隆完成后即完成。
-
-> ⚠️ **重要**：记得在下图位置创建自己的分支（默认是 master），然后可以把分支推上去。需要合到 master 的，在 GitLab 网页版提 Merge Request。
->
-> ![](http://kf.51tyty.com/server/index.php?s=/api/attachment/visitFile&sign=8ed8b8b6cccbb4b91f26b7474154e5e5)
-
-## 二、项目初始化
-
-将名为 `ossautoui` 的文件夹直接拖到 PyCharm 里面即可，PyCharm 会自动打开项目。
-
-### 1. 创建虚拟环境（Virtual Env）
-
-直接在 PyCharm 右下角创建环境。
-
-![](http://kf.51tyty.com/server/index.php?s=/api/attachment/visitFile&sign=52438aaf0ffa7cb5e09f4c4363423dc2)
-
-初次打开显示的是未配置解释器，点一下，然后选择"添加新的解释器" → "添加本地解释器"。
-
-按如下图片配置后点击确定即可：
-
-![](http://kf.51tyty.com/server/index.php?s=/api/attachment/visitFile&sign=47ea9a7b6ebd6593b3425eced3368f4f)
-
-### 2. 安装项目依赖
-
-打开 PyCharm 自带的终端（Terminal），确认终端开头显示 `(.venv)` 后，运行下面命令：
-
-```bash
-# 更新 pip
-python -m pip install --upgrade pip
-# 安装 pyproject.toml 中声明的所有依赖
-pip install -e .
+```
+.
+├── config/settings.py        # 统一配置：环境变量加载 + 账号池解析
+├── pages/
+│   ├── base_page.py          # 页面对象基类：多平台 Header 懒加载 + 表格操作通用方法
+│   ├── header.py             # 统一 Header 出口：按 platform 派发主平台/管理后台/子系统
+│   ├── primary/              # 主平台
+│   │   ├── header.py         #   导航 Header（default 标准布局 + alt 备用布局）
+│   │   └── login_page.py     #   登录页（白名单账号免验证码兼容）
+│   ├── admin/                # 管理后台
+│   │   ├── header.py         #   AdminHeader
+│   │   └── login_page.py     #   AdminLoginPage
+│   └── sub/                  # 子系统
+│       └── header.py         #   SubHeader + SubSidebar（SPA 侧边栏）
+├── tests/
+│   ├── conftest.py           # 核心夹具：登录态缓存、多平台 fixtures、企微通知、marker 注册
+│   └── test_main.py          # 架构冒烟测试（改架构后必跑）
+├── utils/                    # 工具集
+│   ├── allure_helper.py      #   Allure 报告目录 / 截图 / 文本附件
+│   ├── captcha_solver.py     #   ddddocr 点选验证码识别（双引擎投票 + IoU 去重）
+│   ├── db_client.py          #   MySQL 客户端
+│   ├── wecom_notifier.py     #   企业微信机器人通知
+│   ├── booking_helper.py     #   约课时间格随机选取（纯样式识别）
+│   ├── data_generator.py     #   随机测试数据生成
+│   └── file_util.py          #   项目根 / 资源路径
+├── runner.py                 # CI 回归执行器（覆盖调试 addopts，触发企微通知）
+├── pyproject.toml            # 依赖与 pytest 配置
+└── .env.example              # 环境变量模板（复制为 .env 后填写）
 ```
 
-### 3. 安装 Playwright 浏览器驱动
+## 二、核心能力
 
-Playwright 需要下载内置的浏览器内核（Chromium）：
+### 1. 多平台 Header 动态导航
+`Header`（主平台）/ `AdminHeader`（管理后台）/ `SubHeader`（子系统）基于路由表
+`_routes` 自动派发 `navigate_to_{key}()` 方法，无需手写每个导航函数。
+新增菜单只需在路由表追加一行。
+
+`pages/base_page.py` 按 `platform` 参数（`default` / `alt` / `admin` / `sub`）
+懒加载对应 Header，业务页面对象继承 `BasePage` 即可直接用 `self.header.navigate_to_xxx()`。
+
+### 2. 登录态缓存（storageState）
+`conftest.py` 首次登录后将 `storage_state` 落盘到系统临时目录，后续用例/模块
+直接从缓存创建 context，避免重复登录。主平台 / 管理后台 / 子系统 三套缓存相互独立。
+
+### 3. 账号池 + marker 自动注册
+`config/settings.py` 用 `_parse_account_pool` 解析 `XXX_ACCOUNTS` 为账号池；
+`conftest.py` 扫描 `Config.*_ACCOUNTS` 自动注册同名 pytest marker，
+按 `worker_id` 轮询分配账号，实现并发隔离。新增模块账号池即自动可用，无需改 conftest。
+
+### 4. CI 回归执行器
+`runner.py` 默认无头 + 自动并发跑全量用例，覆盖 `pyproject.toml` 的调试 addopts，
+并通过 `Config.WECOM_NOTIFY` 触发企微结果推送。支持 CLI 覆盖：
 
 ```bash
+python runner.py                              # 默认无头全量回归
+python runner.py --headed --slowmo 500        # 有头调试
+python runner.py --workers 4 --reruns 2       # 4 并发 + 失败重试
+```
+
+### 5. 失败自动截图 + Allure 报告
+`pytest_runtest_makereport` 钩子在用例失败时自动截图附加到报告；
+每次运行按时间戳生成独立报告目录 `report/allure-results-YYYYMMDD_HHmmss`。
+
+## 三、环境搭建
+
+### 1. 安装 Python 3.13+ 与依赖
+```bash
+python -m pip install --upgrade pip
+pip install -e .
 playwright install chromium
 ```
 
-### 4. 配置环境变量
+### 2. 安装 Allure
+下载 [Allure Releases](https://github.com/allure-framework/allure2/releases)，
+将其 `bin` 目录加入系统 `Path`，终端执行 `allure --version` 验证。
 
-项目中已有 `.env` 文件，在其中配置自己机构的账号密码即可：
-
-```env
-# 基础环境（必填）
-BASE_URL=https://your-oss-system.com/#/login
-OSS_USERNAME=your_username
-OSS_PASSWORD=your_password
-
-# 模块专用账号（可选，格式：账号池 OSS_<MODULE>_ACCOUNTS=user:pass,user:pass）
-OSS_SALES_ACCOUNTS=sales_user1:pass1,sales_user2:pass2
-OSS_ACADEMIC_ACCOUNTS=academic_user:pass
-OSS_WJGL_ACCOUNTS=wjgl_user:pass
+### 3. 配置环境变量
+```bash
+cp .env.example .env   # Windows: copy .env.example .env
 ```
+按 `.env` 注释填写 `BASE_URL`、账号、数据库等。模块账号池格式见 `.env.example`。
 
-## 三、运行测试
-
-### 方式 A：使用统一运行器 runner.py（推荐）
-
-`runner.py` 面向 CI 回归，默认无头运行全量用例，也支持 CLI 参数覆盖：
+## 四、运行测试
 
 ```bash
-# 默认配置（无头 + 自动并发）
-python runner.py
+# 本地调试（pyproject.toml 默认 --headed --slowmo=500）
+pytest
 
-# CLI 覆盖常用参数
-python runner.py --headed --slowmo 500     # 有头调试
-python runner.py --workers 4 --reruns 2    # 4 并发 + 失败重试
+# 架构冒烟（改架构后必跑）
+pytest tests/test_main.py
+
+# 指定模块 / 单用例
+pytest tests/<module>/
+pytest tests/<module>/test_xxx.py::test_case
+
+# 无头快速模式
+pytest --headed=false --slowmo=0
 ```
 
-### 方式 B：PyCharm 直接运行
-
-运行测试用例文件夹：
-
-![](http://kf.51tyty.com/server/index.php?s=/api/attachment/visitFile&sign=a7083ee9821f2cef1d84d1fa938404c6)
-
-运行单个测试用例：
-
-![](http://kf.51tyty.com/server/index.php?s=/api/attachment/visitFile&sign=5c095424620d5497e1b64ef6e5adff46)
-
-### 方式 C：pytest 命令行
-
+## 五、查看报告
 ```bash
-pytest                           # 运行所有用例
-pytest tests/sales/              # 只跑销售模块
-pytest tests/academic/           # 只跑教务模块
-pytest -n 4 --reruns 2           # 4 并发 + 失败重试
-pytest --headed=false            # 无头快速模式
+allure serve report/allure-results-YYYYMMDD_HHmmss
+# 导出单文件
+allure generate report/allure-results-YYYYMMDD_HHmmss -o report/html_report --clean
+allure-combine ./report/html_report   # → report/html_report/complete.html
 ```
 
-## 四、查看测试报告
+## 六、基于本架构开发业务用例
 
-测试完成后，Allure 原始数据保存在 `report/allure-results-YYYYMMDD_HHmmss` 中。
-
-```bash
-# 启动本地服务查看（最常用）
-allure serve report/allure-results-2026XXXX_XXXXXX
-
-# 导出为静态 HTML 文件
-allure generate report/allure-results-2026XXXX_XXXXXX -o report/html_report --clean
-
-# 合并为单个 HTML 文件（便于分享）
-allure-combine ./report/html_report
-# → 生成 report/html_report/complete.html
-```
-
-## 五、拿到项目后该做什么？（开发建议）
-
-1. **熟悉目录结构**：
-
-   - `pages`：页面操作逻辑，新增页面请参考 `base_page.py`。
-   - `tests`：存放测试用例代码。
-   - `utils`：工具类，如 `captcha_solver.py`（验证码识别）、`db_client.py`（数据库查询）、`allure_helper.py`（Allure 报告辅助）。
-
-2. **理解 POM 模式**：
-
-   - 本项目严格执行页面对象模型（Page Object Model）。
-   - **不要**在测试用例里写具体的元素定位，所有定位写在 `pages` 对应的类中。
-
-3. **编写新用例的流程**：
-
-   1. 在 `pages` 下创建或寻找对应的页面模块。
-   2. 在 `Header` 组件中检查是否有进入该页面的导航方法。
-   3. 在 `tests` 下编写脚本，调用 `page` 对象的方法并进行断言。
-
-4. **调试技巧**：
-
-   - `pyproject.toml` 已配置 `--headed --slowmo=500` 作为默认调试模式。
-   - CI 回归使用 `python runner.py` 自动切换为无头模式。
-   - 需要更慢速度时，使用 `python runner.py --headed --slowmo 1000`。
-
-> 💡 如果你在运行中遇到验证码识别失败，项目内置了 `ddddocr`，它会自动重试。如需更高级配置，请查看 `utils/captcha_solver.py`。
+1. **新增页面**：在 `pages/<平台>/<模块>/` 下创建页面对象，继承 `BasePage`，
+   定位器与操作写在页面类中（POM 模式，禁止在用例里写定位）。
+2. **导航复用**：进入页面前用 `self.header.navigate_to_xxx()`；菜单需新增时，
+   在对应平台 `header.py` 的路由表追加一行即可自动生成导航方法。
+3. **新增模块账号**：在 `.env` 配置 `XXX_ACCOUNTS`，conftest 自动注册
+   marker，用例加 `@pytest.mark.xxx` 即按账号池分配。
+4. **编写用例**：在 `tests/<模块>/` 下编写，使用 `logged_in_page` / `shared_page`
+   等夹具获取已登录页面，调用页面对象方法并断言。

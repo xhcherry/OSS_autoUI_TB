@@ -64,7 +64,7 @@ class TestRunner:
         if self.count > 1:
             args.append(f"--count={self.count}")
 
-        print(f"开始根据 runner.py 的配置执行测试...")
+        print("开始根据 runner.py 的配置执行测试...")
         print(f"执行指令映射: pytest {' '.join(args)}\n")
 
         # 标记由 runner 触发，conftest 据此决定是否推送企微
@@ -83,7 +83,7 @@ class TestRunner:
             print(f"测试报告：allure serve {rel}\n")
             print("将报告渲染为单文件HTML，依次执行：")
             print(f"  1. allure generate {rel} -o report/html_report --clean")
-            print(f"  2. allure-combine ./report/html_report")
+            print("  2. allure-combine ./report/html_report")
             print("单文件：complete.html\n")
         else:
             print(f"\n跑完后未能成功生成 allure 记录文件夹：{report_dir}")
@@ -93,11 +93,11 @@ class TestRunner:
 
 # CLI 参数映射
 CLI_FLAGS: dict[str, tuple[str, type]] = {
-    "--headed":   ("headless", bool),
-    "--slowmo":   ("slowmo", int),
-    "--workers":  ("workers", str),
-    "--reruns":   ("reruns", int),
-    "--count":    ("count", int),
+    "--headed": ("headless", bool),
+    "--slowmo": ("slowmo", int),
+    "--workers": ("workers", str),
+    "--reruns": ("reruns", int),
+    "--count": ("count", int),
 }
 
 
@@ -110,7 +110,7 @@ def _parse_cli(argv: list[str]) -> dict:
         if arg in CLI_FLAGS:
             key, typ = CLI_FLAGS[arg]
             if typ is bool:
-                kwargs[key] = False           # --headed → headless=False
+                kwargs[key] = False  # --headed → headless=False
             else:
                 i += 1
                 if i < len(argv):

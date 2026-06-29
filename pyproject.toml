@@ -5,23 +5,23 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ossautoui"
 version = "0.1.0"
-description = "OSS 自动化 UI 测试框架"
+description = "自动化 UI 测试框架架构"
 requires-python = ">=3.13"
 dependencies = [
-    "playwright",
-    "pytest",
-    "pytest-playwright",
-    "allure-pytest",
-    "allure-python-commons",
-    "allure-combine",
-    "python-dotenv",
-    "PyYAML",
-    "ddddocr",
-    "Pillow",
-    "pymysql",
-    "pytest-xdist",
-    "pytest-repeat",
-    "pytest-rerunfailures",
+    "playwright>=1.60.0",
+    "pytest>=9.0.3",
+    "pytest-playwright>=0.8.0",
+    "allure-pytest>=2.16.0",
+    "allure-python-commons>=2.16.0",
+    "allure-combine>=1.0.11",
+    "python-dotenv>=1.2.2",
+    "PyYAML>=6.0.3",
+    "ddddocr>=1.6.1",
+    "Pillow>=12.2.0",
+    "pymysql>=1.2.0",
+    "pytest-xdist>=3.8.0",
+    "pytest-repeat>=0.9.4",
+    "pytest-rerunfailures>=16.3",
 ]
 
 [tool.setuptools.packages.find]

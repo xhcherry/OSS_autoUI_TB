@@ -75,8 +75,8 @@ class SubHeader:
 # ── 子系统 SPA 侧边栏 ──
 
 _SPA_MENUS = {
-    "config": "配置管理",
-    "paper": "内容管理",
+    "menu1": "侧边菜单1",
+    "menu2": "侧边菜单2",
 }
 
 
@@ -88,10 +88,10 @@ class SubSidebar:
         for key, name in _SPA_MENUS.items():
             setattr(self, f"{key}_menu", page.get_by_role("menuitem", name=name))
 
-    def go_to_config(self):
-        """进入「配置管理」"""
-        self.config_menu.click()
+    def go_to_menu1(self):
+        """进入「侧边菜单1」"""
+        self.menu1_menu.click()
 
-    def go_to_paper(self):
-        """进入「内容管理」"""
-        self.paper_menu.click()
+    def go_to_menu2(self):
+        """进入「侧边菜单2」"""
+        self.menu2_menu.click()

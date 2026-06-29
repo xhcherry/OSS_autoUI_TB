@@ -32,7 +32,6 @@
 │   ├── captcha_solver.py     #   ddddocr 点选验证码识别（双引擎投票 + IoU 去重）
 │   ├── db_client.py          #   MySQL 客户端
 │   ├── wecom_notifier.py     #   企业微信机器人通知
-│   ├── booking_helper.py     #   约课时间格随机选取（纯样式识别）
 │   ├── data_generator.py     #   随机测试数据生成
 │   └── file_util.py          #   项目根 / 资源路径
 ├── runner.py                 # CI 回归执行器（覆盖调试 addopts，触发企微通知）

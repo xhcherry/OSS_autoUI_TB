@@ -55,9 +55,6 @@ class Header:
             setattr(self, f"{key}_tab", page.get_by_text(name).first)
 
         self.collapse = page.get_by_text("收起")
-        self.user_dropdown = page.locator(
-            ".cursor-pointer.flex.items-center.el-dropdown-link"
-        )
 
         self._routes = {}
         for tab_key, menu_text, nav_key, kw in menus:
@@ -81,10 +78,6 @@ class Header:
         if not secondary_menu.first.is_visible():
             primary_tab.click()
         secondary_menu.first.click()
-
-    def logout(self):
-        self.user_dropdown.hover()
-        self.page.get_by_text("退出登录").click()
 
     def __getattr__(self, name):
         if name.startswith("navigate_to_"):

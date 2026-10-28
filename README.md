@@ -12,29 +12,30 @@
 
 ```
 .
-├── config/settings.py        # 统一配置：环境变量加载 + 账号池解析
+├── config/settings.py        # 统一配置：环境变量加载 + 账号池解析 + 通知开关
 ├── pages/
-│   ├── base_page.py          # 页面对象基类：多平台 Header 懒加载 + 表格操作通用方法
+│   ├── base_page.py          # 页面对象基类：Header 懒加载 + 通用定位器 + 等待收口 + 弹窗/搜索通用方法
 │   ├── header.py             # 统一 Header 出口：按 platform 派发主平台/管理后台/子系统
 │   ├── primary/              # 主平台
 │   │   ├── header.py         #   导航 Header（default 标准布局 + alt 备用布局）
-│   │   └── login_page.py     #   登录页（白名单账号免验证码兼容）
+│   │   └── login_page.py     #   登录页（滑块验证自动通过 + 白名单账号免验证）
 │   ├── admin/                # 管理后台
 │   │   ├── header.py         #   AdminHeader
 │   │   └── login_page.py     #   AdminLoginPage
 │   └── sub/                  # 子系统
 │       └── header.py         #   SubHeader + SubSidebar（SPA 侧边栏）
 ├── tests/
-│   ├── conftest.py           # 核心夹具：登录态缓存、多平台 fixtures、企微通知、marker 注册
+│   ├── conftest.py           # 核心夹具：单会话完整登录、多平台 fixtures、企微通知、marker 注册
 │   └── test_main.py          # 架构冒烟测试（改架构后必跑）
 ├── utils/                    # 工具集
-│   ├── allure_helper.py      #   Allure 报告目录 / 截图 / 文本附件
-│   ├── captcha_solver.py     #   ddddocr 点选验证码识别（双引擎投票 + IoU 去重）
+│   ├── allure_helper.py      #   Allure 报告目录 / 截图 / 文本附件 / 单文件 HTML 报告
+│   ├── captcha_solver.py     #   登录滑块拖拽验证（ls-slide-verify，模拟人类轨迹）
 │   ├── db_client.py          #   MySQL 客户端
 │   ├── wecom_notifier.py     #   企业微信机器人通知
 │   ├── data_generator.py     #   随机测试数据生成
-│   └── file_util.py          #   项目根 / 资源路径
-├── runner.py                 # CI 回归执行器（覆盖调试 addopts，触发企微通知）
+│   ├── file_util.py          #   项目根 / 资源路径
+│   └── step_logger.py        #   UI 操作步骤日志（Playwright 类级补丁，中文打印每步操作）
+├── runner.py                 # CI 回归执行器（覆盖调试 addopts，触发企微通知，运行后自动出单文件报告）
 ├── pyproject.toml            # 依赖与 pytest 配置
 └── .env.example              # 环境变量模板（复制为 .env 后填写）
 ```
@@ -49,9 +50,12 @@
 `pages/base_page.py` 按 `platform` 参数（`default` / `alt` / `admin` / `sub`）
 懒加载对应 Header，业务页面对象继承 `BasePage` 即可直接用 `self.header.navigate_to_xxx()`。
 
-### 2. 登录态缓存（storageState）
-`conftest.py` 首次登录后将 `storage_state` 落盘到系统临时目录，后续用例/模块
-直接从缓存创建 context，避免重复登录。主平台 / 管理后台 / 子系统 三套缓存相互独立。
+### 2. 单会话完整登录
+`conftest.py` 的登录 fixtures（`logged_in_page` / `shared_page` / `admin_*` /
+`sub_*`）每次创建独立 context 并完整登录。目标系统限制同账号多会话时
+storage_state 登录态缓存无法复用（新会话会踢掉旧会话），框架统一改为
+每次全量登录；`goto` 使用 `domcontentloaded` 防止第三方 SDK 挂起拖慢
+load 事件导致超时。`page_factory` 支持单用例内多账号场景。
 
 ### 3. 账号池 + marker 自动注册
 `config/settings.py` 用 `_parse_account_pool` 解析 `XXX_ACCOUNTS` 为账号池；
@@ -66,11 +70,20 @@
 python runner.py                              # 默认无头全量回归
 python runner.py --headed --slowmo 500        # 有头调试
 python runner.py --workers 4 --reruns 2       # 4 并发 + 失败重试
+python runner.py --targets tests/ tests/sub/  # 指定多个运行目标
+python runner.py --no-notify                  # 本次运行不推送企微通知
 ```
 
-### 5. 失败自动截图 + Allure 报告
-`pytest_runtest_makereport` 钩子在用例失败时自动截图附加到报告；
-每次运行按时间戳生成独立报告目录 `report/allure-results-YYYYMMDD_HHmmss`。
+### 5. 失败自动截图 + Allure 3 单文件报告
+`pytest_runtest_makereport` 钩子在用例失败时自动截图附加到报告，并剥离
+Playwright 断言异常中的 Aria snapshot 刷屏噪声；每次运行按时间戳生成独立
+报告目录 `report/allure-results-YYYYMMDD_HHmmss`，会话结束自动生成可分享的
+单文件 HTML 报告（需 Allure 3.15+，`allure awesome --single-file`）。
+
+### 6. UI 操作步骤日志
+`utils/step_logger.py` 给 Playwright 打类级补丁，每一步点击/输入/按键打印
+中文步骤日志（配合 `-s` 输出），无头 / CI / 服务器运行也能看到每一步做了
+什么；`BasePage` 初始化时自动安装。
 
 ## 三、环境搭建
 
@@ -81,9 +94,11 @@ pip install -e .
 playwright install chromium
 ```
 
-### 2. 安装 Allure
-下载 [Allure Releases](https://github.com/allure-framework/allure2/releases)，
-将其 `bin` 目录加入系统 `Path`，终端执行 `allure --version` 验证。
+### 2. 安装 Allure 3
+```bash
+npm install -g allure   # 需先安装 Node.js
+allure --version        # 单文件报告需 Allure 3.15+
+```
 
 ### 3. 配置环境变量
 ```bash
@@ -111,9 +126,8 @@ pytest --headed=false --slowmo=0
 ## 五、查看报告
 ```bash
 allure serve report/allure-results-YYYYMMDD_HHmmss
-# 导出单文件
-allure generate report/allure-results-YYYYMMDD_HHmmss -o report/html_report --clean
-allure-combine ./report/html_report   # → report/html_report/complete.html
+# 单文件报告已由框架自动生成（Allure 3.15+），直接分发：
+# report/allure-results-YYYYMMDD_HHmmss/index.html
 ```
 
 ## 六、基于本架构开发业务用例

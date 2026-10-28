@@ -1,31 +1,29 @@
+# MR 门禁流水线：只做用例收集校验，拦截语法错误、导入失败、未知 marker。
+# 架构仓库不内置可运行的业务环境，全量回归请在业务项目内
+# 配置好 .env 后由 runner.py / 测试平台调度执行。
+
 stages:
-  - test
+  - lint
 
-variables:
-  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "master"
 
-cache:
-  paths:
-    - .cache/pip
-    - .venv/
-
-test_ui:
-  stage: test
+# 用例收集不启动浏览器，无需 Playwright 浏览器与 Allure，官方镜像即可。
+# 共享 Runner 是 shell executor 时删除 image 行，直接用服务器上的 Python 3.13。
+collect:
+  stage: lint
   image: python:3.13
-  before_script:
-    - python -V
-    - apt-get update && apt-get install -y libgl1
-    - pip install --upgrade pip
-    - pip install -e .
-    - playwright install --with-deps chromium
-  script:
-    - python runner.py
-  artifacts:
-    when: always
+  variables:
+    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  cache:
+    key:
+      files:
+        - pyproject.toml
     paths:
-      - report/
-    expire_in: 1 week
-  only:
-    - main
-    - master
-    - merge_requests
+      - .cache/pip
+  script:
+    - pip install -e .
+    - pytest --collect-only -q -o addopts="" --import-mode=importlib

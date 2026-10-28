@@ -19,13 +19,28 @@ def _parse_account_pool(raw, fallback_user, fallback_pass):
     return [{"username": fallback_user, "password": fallback_pass}]
 
 
+def _platform_flag(name, default=False):
+    """解析外部（测试平台 / CI）注入的子进程环境变量布尔开关
+    （1/true/yes/on，不区分大小写）。本地直接 pytest 运行时不存在该变量，
+    保持默认关闭。
+    """
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
 class Config:
+    # 框架无头静默运行公共参数
+    # （-s 输出步骤日志，便于 CI/服务器查看执行过程；runner.py 覆盖调试 addopts 时使用）
+    HEADLESS_ADDOPTS = "-s -v --tb=short --strict-markers --import-mode=importlib"
+
     # 主平台登录（必填）
     BASE_URL = os.getenv("BASE_URL", "")
     USERNAME = os.getenv("USERNAME", "")
     PASSWORD = os.getenv("PASSWORD", "")
 
-    # ── 模块专用账号池 ────────────────────────────────────────────
+    # 模块专用账号池
     # 每个模块可配单个或多个账号，并发时按 worker_id 轮询分配。
     # 方式1（池子，推荐）：MODULE_A_ACCOUNTS=user1:pass1,user2:pass2
     # 方式2（单账号兼容）：MODULE_A_USERNAME / MODULE_A_PASSWORD
@@ -47,9 +62,11 @@ class Config:
         os.getenv("MODULE_C_PASSWORD", PASSWORD),
     )
 
-    # 企业微信机器人通知（可选）
+    # 企业微信机器人通知
     WECOM_WEBHOOK_URL = os.getenv("WECOM_WEBHOOK_URL", "")
-    WECOM_NOTIFY = False  # runner.py 会在执行前设为 True，调试时不推送
+    # 推送开关：runner.py 触发时置 True；外部平台也可通过
+    # 子进程环境变量 WECOM_NOTIFY=1 注入，本地直跑默认不推送
+    WECOM_NOTIFY = _platform_flag("WECOM_NOTIFY", False)
 
     # 管理后台平台（数据验证用，可选）
     ADMIN_BASE_URL = os.getenv("ADMIN_BASE_URL", "")

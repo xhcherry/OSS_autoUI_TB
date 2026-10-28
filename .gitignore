@@ -185,5 +185,7 @@ cython_debug/
 # other
 auth.json
 .workbuddy
-.codebuddy
+.codebuddy/memory
 .playwright-mcp
+.qoder/repowiki
+.env

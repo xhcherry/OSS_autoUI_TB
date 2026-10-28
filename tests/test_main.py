@@ -4,9 +4,10 @@
 修改 config / utils / runner / tests/conftest.py 等架构代码后，
 必须跑通本文件，确认框架核心链路未被破坏：
 
-1. 登录态 fixture（logged_in_page / shared_page + storageState 缓存）
+1. 登录 fixture（logged_in_page / shared_page 单会话完整登录）
 2. Header 动态导航（navigate_to_{key} 自动派发）
 3. 账号池 / marker 解析（conftest._resolve_account）
+4. BasePage 通用元素与等待收口（loading_mask / error_text）
 
 用例只依赖架构自身（pages.primary.header、config.settings、conftest fixtures），
 不引入任何业务页面，便于在剥离架构后独立验证。
@@ -17,7 +18,9 @@ import pytest
 from playwright.sync_api import expect
 
 from config.settings import Config
+from pages.base_page import BasePage
 from pages.primary.header import Header
+from utils.allure_helper import attach_screenshot
 
 
 def test_config_loaded():
@@ -32,19 +35,28 @@ def test_login_fixture_works(logged_in_page):
 
 @pytest.mark.p1
 def test_all_pages_navigation(shared_page):
-    """遍历主平台 Header 所有二级菜单路由，校验页面可正常打开且无"错误"字样。
+    """遍历主平台 Header 所有二级菜单路由，校验页面可正常打开且无报错文案。
 
     覆盖 Header 的 __getattr__ 动态导航、_click_menu 展开逻辑，
+    以及 BasePage 的 loading 遮罩等待与 error_text 校验，
     是架构导航能力的端到端冒烟。
     """
     header = Header(shared_page)
+    base = BasePage(shared_page)
     failed = []
 
-    for nav_key in header._routes:
+    for index, nav_key in enumerate(header._routes, start=1):
         try:
             getattr(header, f"navigate_to_{nav_key}")()
-            expect(shared_page.get_by_text("错误")).not_to_be_visible()
+            # 关闭页面可能存在的弹窗，等 loading 遮罩消失（页面稳定）后校验
+            base.dismiss_dialog_if_present()
+            base.wait_loading_done()
+            expect(base.error_text).not_to_be_visible()
         except Exception as e:
+            try:
+                attach_screenshot(shared_page, f"{index:02d}_{nav_key}_FAILED")
+            except Exception:
+                pass
             failed.append(f"{nav_key}: {e}")
 
     if failed:

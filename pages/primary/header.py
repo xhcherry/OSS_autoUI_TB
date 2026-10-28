@@ -75,6 +75,11 @@ class Header:
 
     @staticmethod
     def _click_menu(primary_tab, secondary_menu):
+        # 等待一级 tab 可见（处理 SPA 渲染延迟），不可见时先展开一级菜单
+        try:
+            primary_tab.wait_for(state="visible", timeout=10000)
+        except Exception:
+            pass
         if not secondary_menu.first.is_visible():
             primary_tab.click()
         secondary_menu.first.click()

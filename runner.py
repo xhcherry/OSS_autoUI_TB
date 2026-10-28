@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from config.settings import Config
-from utils.allure_helper import generate_allure_report_dir
+from utils.allure_helper import generate_allure_report_dir, generate_single_file_html
 
 
 class TestRunner:
@@ -17,31 +17,45 @@ class TestRunner:
 
         python runner.py --headed --slowmo 500     # 临时有头调试
         python runner.py --workers 4 --reruns 2     # 自定义并发与重试
+        python runner.py --targets tests/ tests/sub # 指定多个目标
+        python runner.py --no-notify                # 本次不推送企微通知
     """
 
     # 回归专用 addopts（覆盖 pyproject.toml 中 --headed --slowmo）
-    _HEADLESS_ADDOPTS = "-v --tb=short --strict-markers"
+    _HEADLESS_ADDOPTS = Config.HEADLESS_ADDOPTS
 
     def __init__(self, **kwargs):
         # 运行目标（默认全量回归）
-        self.test_targets: list[str] = kwargs.get("test_targets", ["tests/"])
+        targets = kwargs.get("test_targets", ["tests/"])
+        if isinstance(targets, str):
+            targets = [targets]
+        self.test_targets: list[str] = targets
+
+        # 报告参数透传（用于外部平台与 CI 关联任务）
+        self.alluredir: str | None = kwargs.get("alluredir", None)
+        self.junitxml: str | None = kwargs.get("junitxml", None)
 
         # 运行模式（CI 默认无头、无慢放）
         self.headless: bool = kwargs.get("headless", True)
         self.slowmo: int = kwargs.get("slowmo", 0)
 
         # 并发 / 重试
-        #     workers: None→单进程 | "auto"→自动 | "4"→4 核
-        self.workers: str | None = kwargs.get("workers", "None")
+        self.workers: str | None = kwargs.get("workers", None)
         self.reruns: int = kwargs.get("reruns", 0)
         self.count: int = kwargs.get("count", 1)
+
+        # 企微通知开关，外部平台可关闭
+        self.notify: bool = kwargs.get("notify", True)
 
     def run(self) -> int:
         args: list[str] = [*self.test_targets]
 
         # Allure 报告目录
-        report_dir = generate_allure_report_dir()
+        report_dir = self.alluredir if self.alluredir else generate_allure_report_dir()
         args.append(f"--alluredir={report_dir}")
+
+        if self.junitxml:
+            args.append(f"--junitxml={self.junitxml}")
 
         # 界面模式
         if not self.headless:
@@ -67,8 +81,8 @@ class TestRunner:
         print("开始根据 runner.py 的配置执行测试...")
         print(f"执行指令映射: pytest {' '.join(args)}\n")
 
-        # 标记由 runner 触发，conftest 据此决定是否推送企微
-        Config.WECOM_NOTIFY = True
+        # 标记由 runner 触发，conftest 据此决定是否推送企微通知
+        Config.WECOM_NOTIFY = self.notify
 
         exit_code = pytest.main(args)
 
@@ -76,17 +90,16 @@ class TestRunner:
         print(f"测试框架执行完毕！全局返回码 (Exit Code): {exit_code}")
         print("=" * 50)
 
-        # Allure 报告查看指引
+        # Allure 报告处理
         report_path = Path(report_dir)
         if report_path.exists():
             rel = str(report_path.relative_to(Path.cwd())).replace("\\", "/")
-            print(f"测试报告：allure serve {rel}\n")
-            print("将报告渲染为单文件HTML，依次执行：")
-            print(f"  1. allure generate {rel} -o report/html_report --clean")
-            print("  2. allure-combine ./report/html_report")
-            print("单文件：complete.html\n")
+            # 自动在原报告目录内生成单文件 HTML 报告
+            generate_single_file_html(report_dir)
+            print(f"单文件 HTML 报告已生成：{rel}/index.html")
+            print(f"在线查看：allure open {rel}")
         else:
-            print(f"\n跑完后未能成功生成 allure 记录文件夹：{report_dir}")
+            print(f"\n未能成功生成 allure 记录文件夹：{report_dir}")
 
         return exit_code
 
@@ -98,6 +111,9 @@ CLI_FLAGS: dict[str, tuple[str, type]] = {
     "--workers": ("workers", str),
     "--reruns": ("reruns", int),
     "--count": ("count", int),
+    "--alluredir": ("alluredir", str),
+    "--junitxml": ("junitxml", str),
+    "--no-notify": ("notify", bool),
 }
 
 
@@ -105,17 +121,27 @@ def _parse_cli(argv: list[str]) -> dict:
     """将命令行参数解析为 TestRunner 构造参数。"""
     kwargs: dict = {}
     i = 0
+    targets = []
     while i < len(argv):
         arg = argv[i]
-        if arg in CLI_FLAGS:
+        if arg == "--targets":
+            i += 1
+            while i < len(argv) and not argv[i].startswith("--"):
+                targets.append(argv[i])
+                i += 1
+            continue
+        elif arg in CLI_FLAGS:
             key, typ = CLI_FLAGS[arg]
             if typ is bool:
-                kwargs[key] = False  # --headed → headless=False
+                kwargs[key] = False
             else:
                 i += 1
                 if i < len(argv):
                     kwargs[key] = typ(argv[i])
         i += 1
+
+    if targets:
+        kwargs["test_targets"] = targets
     return kwargs
 
 
